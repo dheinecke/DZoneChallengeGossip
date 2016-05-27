@@ -18,15 +18,109 @@
  */
 package com.javajedi.gossip;
 
+import java.io.PrintWriter;
+import java.util.Objects;
 import java.util.stream.IntStream;
 
-/**
- * My solution for the DZone Java Code Challenge: Bus GossipBonus
- *
+/*
+ * My solution for the DZone Java Code Challenge: Bus Gossip
  * https://dzone.com/articles/java-code-challenge-bus-gossip
+ *
+ * Notes:
+ *   Not threadsafe
+ *   Maximum number of drivers is 32 (uses int mask for gossipset)
  */
-
 public class Gossip {
+
+    private int ticks = 0;         // elapsed minutes
+    private int[][] routes;        // the bus routes
+    private int allGossip;           // all gossips
+    private int[] currentLocation; // current location of each driver
+    private int[] currentGossip;   // current gossip set
+    private PrintWriter debugWriter = null;
+    private PrintWriter outputWriter = new PrintWriter(System.out, true);
+    private String result = null; // result of evaluation;
+
+    public Gossip(final int[][] routes) {
+        Objects.requireNonNull(routes, "Illegal number of routes");
+        if(routes.length ==0 || routes.length > 32)
+            throw new IllegalArgumentException("Invalid number of routes");
+        this.routes = routes;
+        this.allGossip = (int) Math.pow(2, routes.length)-1;
+        this.currentLocation = new int[routes.length];
+        this.currentGossip = new int[routes.length];
+        for(int i=0; i<routes.length; ++i) {
+            currentGossip[i] = 1<<i;
+        }
+    }
+
+    public Gossip eval() {
+        // don't eval more than once
+        if(result == null) {
+            // main loop
+            for(ticks = 0; ticks <= 60 * 8; ++ticks) {
+                // exchange gossip
+                for(int i = 0; i < routes.length; ++i) {
+                    for(int j = 0; j < routes.length; ++j) {
+                        if(i == j) continue;
+                        if(routes[i][currentLocation[i]] == routes[j][currentLocation[j]]) {
+                            currentGossip[i] |= currentGossip[j];
+                        }
+                    }
+                }
+                if(debugWriter != null)
+                    printState();
+                // evaluate completion criteria
+                if(IntStream.of(currentGossip).allMatch(g -> g == allGossip)) {
+                    result = (ticks + 1) + "";
+                    break;
+                }
+                // move all drivers
+                for(int i = 0; i < routes.length; ++i) {
+                    currentLocation[i] = ++currentLocation[i] % routes[i].length;
+                }
+            }
+            if(result == null)
+                result = "never";
+        }
+        outputWriter.println(result);
+        return this;
+    }
+
+    void printState() {
+        debugWriter.println("t = "+ticks);
+        for(int i=0; i<routes.length; ++i) {
+            final StringBuilder s = new StringBuilder(i+"");
+            s.append("\t[");
+            for(int j=0; j<currentGossip.length; ++j) {
+                s.append((currentGossip[i] & 1<<j)>>j);
+            }
+            s.append("]");
+            for(int j=0; j<routes[i].length; ++j) {
+                s.append("\t");
+                s.append(routes[i][j]);
+                if(j == currentLocation[i]) {
+                    s.append("*"); // current_loc stop
+                }
+            }
+            debugWriter.println(s.toString());
+        }
+    }
+
+    public String getResult() {
+        return result;
+    }
+
+    public Gossip setDebugWriter(PrintWriter debugWriter) {
+        this.debugWriter = debugWriter;
+        return this;
+    }
+
+    public Gossip setOutputWriter(PrintWriter outputWriter) {
+        this.outputWriter = outputWriter;
+        return this;
+    }
+
     public static void main(String[] args) {
 
 //        int[][] routes = {
@@ -41,13 +135,13 @@ public class Gossip {
 //        };
 
         int[][] routes = {
-            {7, 11, 2, 2, 4, 8, 2, 2},
-            {3, 0, 11, 8},
-            {5, 11, 8, 10, 3, 11},
-            {5, 9, 2, 5, 0, 3},
-            {7, 4, 8, 2, 8, 1, 0, 5},
-            {3, 6, 8, 9},
-            {4, 2, 11, 3, 3}
+                {7, 11, 2, 2, 4, 8, 2, 2},
+                {3, 0, 11, 8},
+                {5, 11, 8, 10, 3, 11},
+                {5, 9, 2, 5, 0, 3},
+                {7, 4, 8, 2, 8, 1, 0, 5},
+                {3, 6, 8, 9},
+                {4, 2, 11, 3, 3}
         };
 
 //        int[][] routes = {
@@ -64,7 +158,7 @@ public class Gossip {
 //                {26,22,26,13,10,19,3,15,2,3,25,29,25,19,19,24,1,26,22,10,17,19,28,11,22,2,13},
 //                {8,4,25,15,20,9,11,3,19},
 //                {24,29,4,17,2,0,8,19,11,28,13,4,16,5,15,25,16,5,6,1,0,19,7,4,6},
-//                {16,25,15,17,20,27,1,11,1,18,14,23,27,25,26,17,1},
+//                {16,25,15,17,20,27,1,11,1,18,14,23,27,25,26,17,1}
 //        };
 
 //        int[][] routes = {
@@ -79,61 +173,8 @@ public class Gossip {
 //                {1,2}
 //        };
 
-        // current location of each driver
-        int[] current_loc = new int[routes.length];
-        // gossip is complete when driver has complete set
-        final int complete = (int) Math.pow(2, routes.length)-1;
-        // give each driver 1 exclusive gossip (bitmap)
-        int[] current_gossip = new int[routes.length];
-        for(int i=0; i<routes.length; ++i) {
-            current_gossip[i] = 1<<i;
-        }
-
-        // main loop
-        for(int tick=0; tick<=60*8; ++tick) {
-            // exchange gossip
-            for(int i=0; i<routes.length; ++i) {
-                for(int j=0; j<routes.length; ++j) {
-                    if(i == j) continue;
-                    if (routes[i][current_loc[i]] == routes[j][current_loc[j]]) {
-                        current_gossip[i] |= current_gossip[j];
-                    }
-                }
-            }
-            // evaluate completion criteria
-            if(IntStream.of(current_gossip).allMatch(g -> g == complete)) {
-                printState(tick, routes, current_gossip, current_loc);
-                System.out.println(tick+1); // # of stops = ticks + 1 (first stop at time 0).
-                System.exit(0);
-            }
-            printState(tick, routes, current_gossip, current_loc);
-
-            // move all drivers
-            for(int i=0; i<routes.length; ++i) {
-                current_loc[i] = ++current_loc[i] % routes[i].length;
-            }
-        }
-        System.out.println("never");
-    }
-
-    // prints each drivers gossip set, route, and current location.
-    private static void printState(int tick, int[][] routes, int[] current_gossip, int[] current_loc) {
-        System.err.println("t = "+tick);
-        for(int i=0; i<routes.length; ++i) {
-            final StringBuilder s = new StringBuilder(i+"");
-            s.append("\t[");
-            for(int j=0; j<current_gossip.length; ++j) {
-                s.append((current_gossip[i] & 1<<j)>>j);
-            }
-            s.append("]");
-            for(int j=0; j<routes[i].length; ++j) {
-                s.append("\t");
-                s.append(routes[i][j]);
-                if(j == current_loc[i]) {
-                    s.append("*"); // current_loc stop
-                }
-            }
-            System.err.println(s.toString());
-        }
+        new Gossip(routes)
+            .setDebugWriter(new PrintWriter(System.err, true))
+            .eval();
     }
 }
